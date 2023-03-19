@@ -1,17 +1,19 @@
 #include "pid.h"
 // constants
-const int LED_PIN = 15; const int buffer_limit = 10000;
+const int LED_PIN = 15; const int buffer_limit = 6000;
 const int DAC_RANGE = 4096; int counter = 0;
 const float Vcc = 3.3; const float R = 10000; const float b = 2.15; float rate = 0; 
 const int p_max = 108;
 // b =6.15
 
 // variables
+bool isAuto = true;
 float lux;
 int pwm;
 float reference {5};
 double energy;
-float visibility_error;
+float visibility;
+float flicker;
 
 //Create a pid controller
 pid my_pid {0.01, 25, 0.1, 0.1};
@@ -45,13 +47,25 @@ void calculate_energy(){
 }
 
 void calc_visibility_error(){
-  visibility_error = 0;
+  visibility = 0;
   for(int i = 1; i < counter; i++){
-      visibility_error += max(0, reference_buffer[i] - measured_illuminance[i]);
+      visibility += max(0, reference_buffer[i] - measured_illuminance[i]);
   }
   Serial.print("visibility_error:");
-  Serial.println(visibility_error/counter);
+  Serial.println(visibility/counter);
 } 
+
+void calc_flicker(){
+  flicker = 0;
+  for(int i = 2; i-2 < counter; i++){
+    float flicking = (duty_cycle[i]-duty_cycle[i-1])*(duty_cycle[i-1]-duty_cycle[i-2]);
+    if( flicking< 0 ){
+      flicker+= flicking;
+    }
+  }
+  Serial.print("flicker:");
+  Serial.println(flicker/counter);
+}
 
 
 void readSerial(){
@@ -67,6 +81,14 @@ void readSerial(){
     case 'g':
       if(argument == "e")
         calculate_energy();
+        break;
+      if(argument == "v")
+        calc_visibility_error();
+      break;
+      if(argument == "f")
+        calc_flicker();
+    case 's':
+      isAuto = !isAuto;
       break;
     default:
       Serial.println("Invalid command");
@@ -96,13 +118,15 @@ void loop() {
   }
 
   /// plot
-  //Serial.print("y:");
-  //Serial.print(y);
-  //Serial.print(y);
-  //Serial.print(",pwm:");
-  //Serial.print(pwm);
-  //Serial.print(",reference:");
-  //Serial.println(reference);
+  if(isAuto == true){
+    Serial.print("y:");
+    Serial.print(y);
+    Serial.print(y);
+    Serial.print(",pwm:");
+    Serial.print(0.01*pwm);
+    Serial.print(",reference:");
+    Serial.println(reference);
+  }
 
 
   analogWrite(LED_PIN, pwm);
