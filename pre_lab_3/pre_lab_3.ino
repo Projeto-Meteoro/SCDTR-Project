@@ -4,7 +4,6 @@ const int LED_PIN = 15; const int buffer_limit = 6000;
 const int DAC_RANGE = 4096; int counter = 0;
 const float Vcc = 3.3; const float R = 10000; const float b = 2.15; float rate = 0; 
 const int p_max = 108;
-// b =6.15
 
 // variables
 bool isAuto = true;

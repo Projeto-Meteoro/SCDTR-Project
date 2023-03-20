@@ -4,56 +4,58 @@ uint8_t this_pico_flash_id[8], node_address;
 struct can_frame canMsgTx, canMsgRx;
 unsigned long counterTx {0}, counterRx {0};
 MCP2515::ERROR err;
-uint8_t unsigned long time_to_write, time_to_read;
-unsigned long read_delay {10}, write_delay {1000};
+uint8_t unsigned long time_to_write;
+unsigned long write_delay {1000};
+const byte interruptPin {20};
+volatile byte data_available {false};
 MCP2515 can0 {spi0, 17, 19, 16, 18, 10000000};
+
+//the interrupt service routine
+void read_interrupt(uint gpio, uint32_t events) {
+  can0.readMessage(&canMsgRx);
+  data_available = true;
+}
+
 void setup() {
-flash_get_unique_id(this_pico_flash_id); //unique
-node_address = this_pico_flash_id[7]; //maybe unique
-Serial.begin();
-can0.reset();
-can0.setBitrate(CAN_1000KBPS);
-can0.setNormalMode(); //setLoopbackMode() for debug
-unsigned long current_time = millis();
-time_to_write = current_time + write_delay;
-time_to_read = current_time + read_delay;
+  flash_get_unique_id(this_pico_flash_id);
+  node_address = this_pico_flash_id[6];
+  Serial.begin();
+  can0.reset();
+  can0.setBitrate(CAN_1000KBPS);
+  can0.setNormalMode();
+  gpio_set_irq_enabled_with_callback(
+    interruptPin,
+    GPIO_IRQ_EDGE_FALL,
+    true,
+    &read_interrupt 
+  );
+  time_to_write = millis() + write_delay;
 }
-
 void loop() {
-unsigned long current_time = millis();
-if( current_time >= time_to_write ) {
-canMsgTx.can_id = node_address;
-canMsgTx.can_dlc = 8;
-//converts data from binary to text mode
-unsigned long div = counterTx;
-for( int i = 0; i < 8; i++ ) {
-canMsgTx.data[7-i] = '0'+(int)(div%10);
-div = div/10;
-}
-err = can0.sendMessage(&canMsgTx);
-Serial.print("Sending message ");
-Serial.print( counterTx );
-Serial.print(" from node ");
-Serial.println( node_address, HEX );
-counterTx++;
-time_to_write = current_time+write_delay;
-}
-
-if(current_time >= time_to_read )
-{
-err = can0.readMessage( &canMsgRx ) ;
-if ( err == MCP2515::ERROR_OK)
-{
-Serial.print("Received message number ");
-Serial.print( counterRx++ );
-Serial.print(" from node ");
-Serial.print( canMsgRx.can_id , HEX);
-Serial.print(" : ");
-//the message comes in text mode
-for (int i=0 ; i < canMsgRx.can_dlc ; i++)
-Serial.print((char) canMsgRx.data[ i ]);
-Serial.println(" ");
-}
-time_to_read = current_time + read_delay;
-}
+  if( millis() >= time_to_write ) {
+    canMsgTx.can_id = node_address;
+    canMsgTx.can_dlc = 8;
+    unsigned long div = counterTx*10;
+    for( int i = 0; i < 8; i++ )
+      canMsgTx.data[7-i]='0'+((div/=10)%10);
+    err = can0.sendMessage(&canMsgTx);
+    Serial.print("Sending message ");
+    Serial.print( counterTx );
+    Serial.print(" from node ");
+    Serial.println( node_address, HEX );
+    counterTx++;
+    time_to_write = millis() + write_delay;
+  }
+  if( data_available )
+  {
+    Serial.print("Received message number ");
+    Serial.print( counterRx++ );
+    Serial.print(" from node ");
+    Serial.print( canMsgRx.can_id , HEX);
+    Serial.print(" : ");
+    for (int i=0 ; i < canMsgRx.can_dlc ; i++)
+      Serial.print((char) canMsgRx.data[ i ]);
+    Serial.println(" ");
+    data_available = false;
+  }
 }
