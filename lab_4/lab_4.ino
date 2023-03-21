@@ -19,13 +19,20 @@ const int p_max = 108;
 
 // variables
 bool isAuto = true;
+bool displayMessage = true;
 float lux;
 int pwm;
 float y;
-float reference {5};
+float reference {0};
 double energy;
 float visibility;
 float flicker;
+
+// temporary variables
+// long jitter = 0;
+// long serial_reading = 0;
+// long serial_writing = 0;
+// long metrics_delay = 0;
 
 enum inter_core_cmds {
   //From core1 to core0: contains data read (16 bit)
@@ -94,7 +101,7 @@ void read_message(){
     msg_to_bytes(msg, b);
     if(b[3] == ICC_READ_DATA) {
       uint16_t val = msg;
-      Serial.print("Received ");
+      if(displayMessage == true) Serial.print("Received ");
       print_message(b[1], node_address, b[2], b[0] );
     }
     else if(b[3] == ICC_ERROR_DATA) {
@@ -113,7 +120,7 @@ void write_message(){
   b[0] = y;
   b[1] = pwm;
   rp2040.fifo.push(bytes_to_msg(b));
-  Serial.print("Sending ");
+  if(displayMessage == true) Serial.print("Sending ");
   print_message(b[1], b[2], b[2], b[0]);
 }
 void control_message(){
@@ -133,6 +140,10 @@ void control_system(){
   reference_buffer[counter] = reference;
   measured_illuminance[counter] = y;
 
+  // unsigned long startTime = millis();
+  // unsigned long endTime = millis();
+  // jitter += (endTime - startTime); 
+
   // update counter
   counter=counter+1;
 
@@ -143,13 +154,17 @@ void control_system(){
 
   /// plot
   if(isAuto == true){
-    Serial.print("y:");
-    Serial.print(y);
+    // startTime = millis();
+    Serial.print("time:");
+    Serial.print(millis());
+    Serial.print(",y:");
     Serial.print(y);
     Serial.print(",pwm:");
     Serial.print(0.01*pwm);
     Serial.print(",reference:");
     Serial.println(reference);
+    // endTime = millis();
+    // serial_writing = endTime - startTime;
   }
 
 
@@ -185,12 +200,20 @@ float volt2lux(int read_adc){
 }
 
 void calculate_energy(){
+  // unsigned long startTime = millis();
   energy = 0;
   for(int i = 1; i < counter; i++){
     energy = energy + duty_cycle[i-1]*(timer[i] - timer[i-1]);
   }
   Serial.print("energy: ");
   Serial.println(energy*p_max);
+  unsigned long endTime = millis();
+  // metrics_delay = endTime - startTime;
+  // if(metrics_delay > 8 ){
+  //   Serial.print(" counter:");
+  //   Serial.print(counter);
+  //   Serial.print(" ");
+  // }
 }
 
 void calc_visibility_error(){
@@ -216,44 +239,60 @@ void calc_flicker(){
 
 
 void readSerial(){
+  // unsigned long startTime = millis();
+
   String serial = Serial.readStringUntil('\n');
   
   char command = serial.charAt(0);
   String argument = serial.substring(2);
+  // unsigned long endTime = millis();
+
+  // serial_reading = endTime - startTime;
+
   switch (command) {
     case 'r':
       reference = argument.toFloat();
       Serial.println(reference);
       break;
     case 'g':
-      if(argument == "e")
-        calculate_energy();
-        break;
-      if(argument == "v")
-        calc_visibility_error();
+      if(argument == "e") calculate_energy();
+      if(argument == "v") calc_visibility_error();
+      if(argument == "f") calc_flicker();
       break;
-      if(argument == "f")
-        calc_flicker();
     case 's':
       isAuto = !isAuto;
+      break;
+    case 'm':
+      displayMessage = !displayMessage;
       break;
     default:
       Serial.println("Invalid command");
       break;
   }
+  // Serial.print("Jitter: ");
+  // Serial.print(jitter);
+  // Serial.print(",serial_writing: ");
+  // Serial.print(serial_writing);
+  // Serial.print(",serial_reading: ");
+    
+  // Serial.print(serial_reading);
+  // Serial.print(", metrics_delay: ");
+  // Serial.println(metrics_delay);
 }
 
 // Auxiliar functions
 void print_message(int number, int node, int id, int val)
 {
-  Serial.print("pwm ");
-  Serial.print( number );
-  Serial.print(" at node " );
-  Serial.print( node, HEX );
-  Serial.print(" with id ");
-  Serial.print( id, HEX );
-  Serial.print(", y: ");
-  Serial.println( val );
+  if(displayMessage == true){
+    Serial.print("pwm ");
+    Serial.print( number );
+    Serial.print(" at node " );
+    Serial.print( node, HEX );
+    Serial.print(" with id ");
+    Serial.print( id, HEX );
+    Serial.print(", y: ");
+    Serial.println( val );
+  }
 }
 
 void print_can_errors(uint8_t canintf, uint8_t eflg) {
